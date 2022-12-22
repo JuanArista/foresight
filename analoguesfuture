@@ -1,0 +1,128 @@
+#install.packages("terra", dependencies = TRUE)
+#remove.packages(c("raster"))
+library(terra)
+library(raster)
+library(analogues)
+library(stringr)
+library(grid)
+library(maptools)
+library(rgdal)
+library(sp)
+
+
+# download climate data for the first  time, from worldclim
+#  for that,create a folder like "R_worldclim" and use it as a path for download worldclim data
+
+WorldClima_path <-"C:/R_worldclim"
+wc_prec <- raster::getData('worldclim', res=2.5,var='prec', path=WorldClima_path)
+wc_temp <- raster::getData('worldclim', res=2.5,var='tmean', path=WorldClima_path)
+
+
+
+# cut the region of interest
+
+# Shape file used for Mask
+pathMask<-'C:/R_worldclim/prueba/Mask/MexLimits.shp'
+# Place where raster cut will be saved
+pathRasterClipped<-'C:/R_worldclim/prueba/clipped/'
+# Source of Analogue rasters
+raster_ini<-'C:/R_worldclim/wc2-5/'
+# Final rasters
+raster_out<-'C:/R_worldclim/prueba/out/'
+
+
+#Reading Shape file for cutting world rasters
+MaskFile<-shapefile(pathMask)
+
+#Reading path of raster file
+rasterList<-list.files(path = raster_ini, pattern = "\\.bil", full.names = T)
+
+#become to raster
+rasters=lapply(rasterList, FUN = raster)
+
+#cut each raster using the mask
+for(rasterFile in rasters){
+  
+  cutting = raster::crop(rasterFile, MaskFile)
+  OutFile<-paste(pathRasterClipped,names(rasterFile),".bil",sep="")
+  
+  raster::writeRaster(cutting,OutFile)
+} 
+
+
+
+# setting the path where the clipped raster will be saved
+setwd(pathRasterClipped)
+
+
+
+# selecting rain files and becomes them to rasters
+rain_files<-list.files(path =pathRasterClipped,  pattern = "^prec.*\\.bil$", full.names = T)
+rain_rasters<-lapply(rain_files, FUN = raster)
+
+#selecting mean temperature  files and become them to  rasters
+tmean_files<-list.files(path =pathRasterClipped,  pattern = "^tmean.*\\.bil$", full.names = T)
+tmean_rasters<-lapply(tmean_files,FUN=raster)
+
+#stacks
+wc_precf <- raster::stack(rain_rasters)
+wc_tempf <-raster::stack(tmean_rasters)
+
+# sites
+sites_path<-'C:/R_worldclim/prueba/somesites.csv'
+FileOfSites<-read.csv(file=sites_path,header = TRUE,sep = ',', stringsAsFactors = FALSE)
+
+#Running analoguest
+
+
+for (i in 1:nrow(FileOfSites))
+{
+  
+  Long<-FileOfSites[i,1]
+  Lat<-FileOfSites[i,2]
+  FileName<-FileOfSites[i,3]
+  print(FileName)
+  
+  params <-  createParameters(x=Long, y=Lat, vars=c("prec","tmean"), weights=c(0.5,0.5), ndivisions=c(12,12),
+                              growing.season=c(1,12),rotation="tmean",threshold=1,
+                              env.data.ref=list(wc_prec,wc_temp), env.data.targ=list(wc_precf,wc_tempf),
+                              outfile=wd,fname=NA,writefile=FALSE)
+  x <- calc_similarity(params)
+  raster::crs(x) <- "+proj=longlat"
+  rasterName_Similarity=paste0(raster_out, "Similarity",FileName,".tif")
+  raster::writeRaster(x, filename =rasterName_Similarity , gdal="COMPRESS=NONE")
+  gc()
+  
+}
+
+
+
+
+
+
+grids <- c('precf1.bil','precf2.bil','precf3.bil','precf4.bil','precf5.bil','precf6.bil','precf7.bil','precf8.bil','precf9.bil','precf10.bil','precf11.bil','precf12.bil')
+gridst <- c('tmeanf1.bil','tmeanf2.bil','tmeanf3.bil','tmeanf4.bil','tmeanf5.bil','tmeanf6.bil','tmeanf7.bil','tmeanf8.bil','tmeanf9.bil','tmeanf10.bil','tmeanf11.bil','tmeanf12.bil')
+
+
+wc_precf <- raster::stack(paste0("C:/rworkspace/rworldclim/wcft2-5/", grids))
+wc_tempf <- raster::stack(paste0("C:/rworkspace/rworldclim/tmeanf/", gridst))
+FileOfSites<-read.csv('C:/rworkspace/rworldclim/Sites3.csv',header = TRUE,sep = ",", stringsAsFactors = FALSE )   
+
+for (i in 1:nrow(FileOfSites))
+{
+  
+  Long<-FileOfSites[i,1]
+  Lat<-FileOfSites[i,2]
+  FileName<-FileOfSites[i,3]
+  print(FileName)
+  
+  params <-  createParameters(x=Long, y=Lat, vars=c("prec","tmean"), weights=c(0.5,0.5), ndivisions=c(12,12),
+                              growing.season=c(1,12),rotation="tmean",threshold=1,
+                              env.data.ref=list(wc_prec,wc_temp), env.data.targ=list(wc_precf,wc_tempf),
+                              outfile=wd,fname=NA,writefile=FALSE)
+  x <- calc_similarity(params)
+  crs(x) <- "+proj=longlat"
+  raster::writeRaster(x, filename = paste0(FileName, ".tif"), gdal="COMPRESS=NONE")
+  gc()
+    
+}
